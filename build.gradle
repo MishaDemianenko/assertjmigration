@@ -17,7 +17,7 @@ buildscript {
 }
 
 plugins {
-   id "org.jetbrains.intellij" version "0.4.1"
+   id "org.jetbrains.intellij" version "0.4.13"
 }
 
 ext.junit4Version        = '4.12'
@@ -37,10 +37,9 @@ repositories {
 }
 
 intellij {
-   //version '173.0'
-   pluginName 'Assertions2Assertj'
+   version '2019.1'
    updateSinceUntilBuild false
-   type 'IC'
+   pluginName 'assertionMigrator'
 }
 
 junitPlatform {
@@ -55,6 +54,10 @@ junitPlatform {
    // configurationParameter 'junit.jupiter.conditions.deactivate', '*'
    // enableStandardTestTask true
    // reportsDir file('build/test-results/junit-platform') // this is the default
+}
+
+patchPluginXml {
+   untilBuild = '201.*'
 }
 
 dependencies {

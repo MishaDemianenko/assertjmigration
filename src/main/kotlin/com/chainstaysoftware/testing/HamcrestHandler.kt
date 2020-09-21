@@ -2,16 +2,10 @@ package com.chainstaysoftware.testing
 
 import com.chainstaysoftware.testing.Util.isQualifiedClass
 import com.intellij.openapi.project.Project
-import com.intellij.psi.JavaPsiFacade
-import com.intellij.psi.PsiClassObjectAccessExpression
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiExpression
-import com.intellij.psi.PsiExpressionList
-import com.intellij.psi.PsiLiteralExpression
-import com.intellij.psi.PsiMethodCallExpression
-import com.intellij.psi.PsiReferenceExpression
+import com.intellij.psi.*
 import com.intellij.psi.impl.source.PsiImmediateClassType
 import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.psi.util.TypeConversionUtil.isPrimitiveAndNotNull
 
 /**
  * Handler to convert Hamcrest Assertions and Junit 4 assertThat Assertions to AssertJ Assertions.
@@ -56,6 +50,7 @@ class HamcrestHandler : AssertHandler {
          matcher.text
             .replace("CoreMatchers.", "")
             .replace("Matchers.", "")
+            .replace(" ", "")
             .startsWith(prefix)
       } == null
    }
@@ -141,6 +136,7 @@ class HamcrestHandler : AssertHandler {
          s == "not(emptyArray())" || s == "not(emptyIterable())" -> "isNotEmpty()"
          s == "not(isEmptyString())" -> "isNotEmpty()"
          s == "not(isEmptyOrNullString())" -> "isNotBlank()"
+         methodName == "isA" -> refactor("isInstanceOf", methodParams)
          methodName == "equalTo" -> refactor("isEqualTo", methodParams)
          methodName == "equalToIgnoringCase" -> refactor("isEqualToIgnoringCase", methodParams)
          methodName == "equalToIgnoringWhiteSpace" -> refactor("isEqualToIgnoringWhitespace", methodParams)
@@ -153,6 +149,7 @@ class HamcrestHandler : AssertHandler {
          methodName == "hasToString" -> refactor("hasToString", methodParams)
          methodName == "containsString" -> refactor("contains", methodParams)
          methodName == "is" -> refactorAssertIs(methodParams)
+         methodName == "emptyIterableOf" -> "isEmpty()"
          methodName == "isEmptyString" -> refactor("isEmpty", methodParams)
          methodName == "isEmptyOrNullString" -> refactor("isBlank", methodParams)
          methodName == "notNullValue" -> "isNotNull()"
@@ -198,12 +195,25 @@ class HamcrestHandler : AssertHandler {
          expressions[0] is PsiLiteralExpression -> "isEqualTo(${expressions[0].text})"
          else -> {
             val refactored = refactorAssertCall(expressions[0])
-            if (expressions[0].text == refactored)
-               "isEqualTo(${expressions[0].text})"
+            if (expressions[0].text == refactored) when {
+                expressions[0] is PsiMethodCallExpression && areArgumentsPrimitives(expressions) -> "isIn(${extractParameters(expressions)})"
+                else -> "isEqualTo(${expressions[0].text})"
+            }
             else
                refactored
          }
       }
+
+   // we assume that for cases where we want to use "in" check we use only primitive types?
+   private fun areArgumentsPrimitives(expressions: Array<PsiExpression>): Boolean {
+      val argumentList = (expressions[0] as PsiMethodCallExpression).argumentList
+      return argumentList.expressions.isNotEmpty() && argumentList.expressions.all { expression -> isPrimitiveAndNotNull(expression.type)  }
+   }
+
+   private fun extractParameters(expressions: Array<PsiExpression>): String {
+      val arguments = (expressions[0] as PsiMethodCallExpression).argumentList
+      return arguments.expressions.joinToString { psiExpression -> psiExpression.text }
+   }
 
    private fun refactorNot(expressions: Array<PsiExpression>): String =
       refactorAssertIs(expressions).replaceFirst("is", "isNot")
@@ -226,10 +236,11 @@ class HamcrestHandler : AssertHandler {
 
    private fun isDateOrInstant(expression: PsiExpression): Boolean {
       val type = expression.type
-      return type is PsiImmediateClassType && (type.className == "Date" || type.className == "Instant")
-         || (expression is PsiMethodCallExpression
-         && ((expression.methodExpression.qualifier as PsiReferenceExpression).text == "Date"
-         || (expression.methodExpression.qualifier as PsiReferenceExpression).text == "Instant"))
+      return type is PsiImmediateClassType && (type.className == "Date" || type.className == "Instant") ||
+              (expression is PsiMethodCallExpression &&
+               expression.methodExpression.qualifier is PsiReferenceExpression &&
+                      ((expression.methodExpression.qualifier as PsiReferenceExpression).text == "Date" ||
+                      (expression.methodExpression.qualifier as PsiReferenceExpression).text == "Instant"))
    }
 
    private fun refactorAllOf(expressions: Array<PsiExpression>) =
